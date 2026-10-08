@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>MsbtSharp</RootNamespace>
+    <AssemblyName>MsbtSharp</AssemblyName>
+    <Version>1.0.0</Version>
+    <Authors>Aiden A</Authors>
+    <Description>Reader and writer for MSBT message files (MsgStdBn) used by Nintendo titles, big- and little-endian, with an editable text form and the Tears of the Kingdom tag definitions.</Description>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="TotK.gcf" LogicalName="MsbtSharp.TotK.gcf" />
+  </ItemGroup>
+
+</Project>
