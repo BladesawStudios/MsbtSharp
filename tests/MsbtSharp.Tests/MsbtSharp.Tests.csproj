@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <LibRoot Condition="'$(LibRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..</LibRoot>
+    <MsbtLibRoot Condition="'$(MsbtLibRoot)' == ''">$(MSBuildThisFileDirectory)..\..\lib</MsbtLibRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,8 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MsbtSharp\MsbtSharp.csproj" />
-    <ProjectReference Include="$(LibRoot)\SarcSharp\src\SarcSharp\SarcSharp.csproj" />
-    <ProjectReference Include="$(LibRoot)\ZsDicSharp\src\ZsDicSharp\ZsDicSharp.csproj" />
+    <ProjectReference Include="$(MsbtLibRoot)\SarcSharp\src\SarcSharp\SarcSharp.csproj" />
+    <ProjectReference Include="$(MsbtLibRoot)\ZsDicSharp\src\ZsDicSharp\ZsDicSharp.csproj" />
   </ItemGroup>
 
 </Project>
