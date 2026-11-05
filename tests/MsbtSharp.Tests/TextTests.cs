@@ -180,4 +180,46 @@ public class TextTests
         back.ApplyEditorText(file.ToEditorText(tags), tags);
         Assert.Equal(file.ToBinary(), back.ToBinary());
     }
+
+    [Fact]
+    public void TagStringsInAUtf8FileAreShownByName()
+    {
+        const string gcf = """
+            msbt:
+              tags:
+                - name: ruby
+                  group: 0
+                  type: 0
+                  arguments:
+                    - name: span
+                      dataType: u16
+                    - name: value
+                      dataType: str
+                - name: animation
+                  group: 4
+                  type: 0
+                  arguments:
+                    - name: name
+                      dataType: str
+            """;
+        MsbtTags tags = MsbtTags.FromGcf(gcf);
+
+        // A ruby of two characters, six UTF-8 bytes; then an odd-length tag, which UTF-8 files don't pad.
+        byte[] ruby = [0x02, 0x00, 0x06, 0x00, 0xE3, 0x81, 0xBB, 0xE3, 0x81, 0x86];
+        byte[] animation = [0x04, 0x00, (byte)'E', (byte)'a', (byte)'s', (byte)'e', 0x00];
+        MsbtFile file = File(("A", [new MsbtTag(0, 0, ruby), new MsbtText("x"), new MsbtTag(4, 0, animation)]));
+        file.Encoding = MsbtEncoding.Utf8;
+        MsbtFile read = Reread(file);
+
+        string text = read.ToEditorText(tags);
+        Assert.Equal("A: {{ruby span=\"2\" value=\"ほう\"}}x{{animation name=\"Ease\" extra=\"00\"}}\n", text);
+
+        MsbtFile copy = MsbtFile.FromBinary(read.ToBinary());
+        copy.ApplyEditorText(text, tags);
+        Assert.Equal(read.ToBinary(), copy.ToBinary());
+
+        copy.ApplyEditorText("A: {{animation name=\"Sad\"}}\n", tags);
+        MsbtTag edited = Assert.IsType<MsbtTag>(copy.Messages[0].Runs[0]);
+        Assert.Equal(new byte[] { 0x03, 0x00, (byte)'S', (byte)'a', (byte)'d' }, edited.Params);
+    }
 }

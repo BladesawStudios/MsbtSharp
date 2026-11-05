@@ -90,19 +90,19 @@ internal static partial class MsbtTextFormat
     private static string TagToText(MsbtFile file, MsbtTag tag, MsbtTags tags)
     {
         if (tags.Find(tag.Group, tag.Type) is not { } definition) return Raw(tag);
-        if (file.Encoding is not MsbtEncoding.Utf16 && definition.Arguments.Any(a => a.DataType == "str")) return Raw(tag);
+        if (file.Encoding is MsbtEncoding.Utf32 && definition.Arguments.Any(a => a.DataType == "str")) return Raw(tag);
 
         // Only a form that rebuilds the same bytes may stand in for them. The padding byte at the end is either padding
         // or part of the trailing bytes; both read back the same, so the first that does is used.
-        bool couldBePadded = tag.Params.Length > 0 && tag.Params[^1] == Pad && tag.Params.Length % 2 == 0;
+        bool couldBePadded = file.Encoding is MsbtEncoding.Utf16 && tag.Params.Length > 0 && tag.Params[^1] == Pad && tag.Params.Length % 2 == 0;
         foreach (bool padded in couldBePadded ? new[] { true, false } : new[] { false })
         {
-            string? content = Decode(definition, tag.Params, file.BigEndian, padded);
+            string? content = Decode(definition, tag.Params, file, padded);
             if (content is null || content.IndexOfAny(['\n', '\r', '}']) >= 0) continue;
 
             try
             {
-                var (group, type, bytes) = EncodeTag(content, tags, file.BigEndian);
+                var (group, type, bytes) = EncodeTag(content, tags, file);
                 if (group == tag.Group && type == tag.Type && bytes.AsSpan().SequenceEqual(tag.Params)) return "{{" + content + "}}";
             }
             catch (FormatException)
@@ -113,10 +113,11 @@ internal static partial class MsbtTextFormat
     }
 
     // Parameter bytes to the text of a tag's arguments, or null if they don't fit the definition. The layout: u8 and
-    // bool are one byte, u16 and s16 two, a str is a 16-bit byte length and then UTF-16 characters, and the whole
-    // block is padded to an even length with 0xCD.
-    private static string? Decode(MsbtTagDefinition definition, byte[] data, bool big, bool padded)
+    // bool are one byte, u16 and s16 two, and a str is a 16-bit byte length and then characters in the file's encoding.
+    // In a UTF-16 file the whole block is padded to an even length with 0xCD; a UTF-8 file doesn't pad.
+    private static string? Decode(MsbtTagDefinition definition, byte[] data, MsbtFile file, bool padded)
     {
+        bool big = file.BigEndian;
         List<string> parts = [definition.Name];
         int offset = 0;
 
@@ -143,10 +144,18 @@ internal static partial class MsbtTextFormat
                     break;
                 case "str" when offset + 2 <= data.Length:
                     int length = U16(data, offset, big);
-                    if (length % 2 != 0 || offset + 2 + length > data.Length) return null;
-                    StringBuilder text = new();
-                    for (int i = 0; i < length; i += 2) text.Append((char)U16(data, offset + 2 + i, big));
-                    value = text.ToString();
+                    if (offset + 2 + length > data.Length) return null;
+                    if (file.Encoding is MsbtEncoding.Utf8)
+                    {
+                        value = Encoding.UTF8.GetString(data, offset + 2, length);
+                    }
+                    else
+                    {
+                        if (length % 2 != 0) return null;
+                        StringBuilder text = new();
+                        for (int i = 0; i < length; i += 2) text.Append((char)U16(data, offset + 2 + i, big));
+                        value = text.ToString();
+                    }
                     offset += 2 + length;
                     break;
                 default:
@@ -222,7 +231,7 @@ internal static partial class MsbtTextFormat
 
             if (match.Groups[5].Success)
             {
-                var (group, type, bytes) = EncodeTag(match.Groups[5].Value, tags, file.BigEndian);
+                var (group, type, bytes) = EncodeTag(match.Groups[5].Value, tags, file);
                 runs.Add(new MsbtTag(group, type, bytes));
             }
             else
@@ -278,8 +287,9 @@ internal static partial class MsbtTextFormat
     }
 
     // "name arg=value ..." to the group, type and parameter bytes of the tag.
-    private static (ushort Group, ushort Type, byte[] Params) EncodeTag(string content, MsbtTags tags, bool big)
+    private static (ushort Group, ushort Type, byte[] Params) EncodeTag(string content, MsbtTags tags, MsbtFile file)
     {
+        bool big = file.BigEndian;
         string[] parts = Split(content);
         if (parts.Length == 0) throw new FormatException("An empty {{ }} tag.");
         if (tags.Find(parts[0]) is not { } definition) throw new FormatException($"Unknown tag {parts[0]}. Use {{cmd:0xe:group:type:0xHEX}} for a tag without a definition.");
@@ -306,8 +316,17 @@ internal static partial class MsbtTextFormat
             if (arg.DataType == "str")
             {
                 text ??= "";
-                Put16((ushort)(text.Length * 2));
-                foreach (char c in text) Put16(c);
+                if (file.Encoding is MsbtEncoding.Utf8)
+                {
+                    byte[] utf8 = Encoding.UTF8.GetBytes(text);
+                    Put16((ushort)utf8.Length);
+                    bytes.AddRange(utf8);
+                }
+                else
+                {
+                    Put16((ushort)(text.Length * 2));
+                    foreach (char c in text) Put16(c);
+                }
                 continue;
             }
 
@@ -348,7 +367,7 @@ internal static partial class MsbtTextFormat
             bytes.AddRange(Convert.FromHexString(extra));
         }
 
-        if (bytes.Count % 2 != 0) bytes.Add(Pad);
+        if (file.Encoding is not MsbtEncoding.Utf8 && bytes.Count % 2 != 0) bytes.Add(Pad);
 
         return (definition.Group, definition.Type, [.. bytes]);
     }
