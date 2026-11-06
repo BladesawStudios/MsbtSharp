@@ -142,6 +142,16 @@ internal static partial class MsbtTextFormat
                     value = (long)(short)U16(data, offset, big);
                     offset += 2;
                     break;
+                case "u32" when offset + 4 <= data.Length:
+                    value = (long)(big ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset)) : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset)));
+                    offset += 4;
+                    break;
+                case "f32" when offset + 4 <= data.Length:
+                    float real = big ? BinaryPrimitives.ReadSingleBigEndian(data.AsSpan(offset)) : BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(offset));
+                    if (!float.IsFinite(real)) return null; // Its exact bits wouldn't survive as text.
+                    value = real.ToString("R", CultureInfo.InvariantCulture);
+                    offset += 4;
+                    break;
                 case "str" when offset + 2 <= data.Length:
                     int length = U16(data, offset, big);
                     if (offset + 2 + length > data.Length) return null;
@@ -330,6 +340,15 @@ internal static partial class MsbtTextFormat
                 continue;
             }
 
+            if (arg.DataType == "f32")
+            {
+                if (!float.TryParse(text ?? "0", NumberStyles.Float, CultureInfo.InvariantCulture, out float real)) throw new FormatException($"{definition.Name}: {arg.Name}=\"{text}\" is not a number.");
+                byte[] raw = new byte[4];
+                if (file.BigEndian) BinaryPrimitives.WriteSingleBigEndian(raw, real); else BinaryPrimitives.WriteSingleLittleEndian(raw, real);
+                bytes.AddRange(raw);
+                continue;
+            }
+
             long value = 0;
             if (text is not null)
             {
@@ -352,6 +371,12 @@ internal static partial class MsbtTextFormat
                 case "s16":
                     if (value is < short.MinValue or > short.MaxValue) throw new FormatException($"{definition.Name}: {arg.Name} must be -32768 to 32767.");
                     Put16(unchecked((ushort)(short)value));
+                    break;
+                case "u32":
+                    if (value is < 0 or > uint.MaxValue) throw new FormatException($"{definition.Name}: {arg.Name} must be 0 to {uint.MaxValue}.");
+                    byte[] word = new byte[4];
+                    if (file.BigEndian) BinaryPrimitives.WriteUInt32BigEndian(word, (uint)value); else BinaryPrimitives.WriteUInt32LittleEndian(word, (uint)value);
+                    bytes.AddRange(word);
                     break;
                 case "bool":
                     bytes.Add((byte)(value != 0 ? 1 : 0));
